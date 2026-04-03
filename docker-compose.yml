@@ -1,0 +1,249 @@
+version: '3.9'
+
+# =============================================================================
+# FlowSync SaaS Revenue Intelligence — Docker Compose
+# =============================================================================
+# Usage:
+#   docker-compose up --build              # Start core services (postgres, api, web)
+#   docker-compose up -d                   # Start in background
+#   docker-compose --profile tools up -d   # Also start pgAdmin
+#   docker-compose --profile dbt up -d     # Also start dbt runner
+#   docker-compose --profile seed up       # Run data seeder (one-shot)
+#   docker-compose --profile ingest up     # Run CSV ingestion pipeline
+#   docker-compose exec api bash           # Shell into API
+#   docker-compose exec dbt dbt run        # Run dbt transformations
+#   docker-compose down -v                 # Stop and remove volumes
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 Database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: flowsync_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-flowsync_bi}
+      POSTGRES_USER: ${POSTGRES_USER:-flowsync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flowsync_secret_change_me}
+      # Performance tuning for analytics workloads
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Run full medallion schema on first init
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+      # Legacy init for backward compat
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    command: >
+      postgres
+        -c shared_buffers=256MB
+        -c effective_cache_size=768MB
+        -c maintenance_work_mem=64MB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
+        -c default_statistics_target=100
+        -c random_page_cost=1.1
+        -c effective_io_concurrency=200
+        -c work_mem=4MB
+        -c max_connections=100
+        -c log_min_duration_statement=1000
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-flowsync} -d ${POSTGRES_DB:-flowsync_bi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - flowsync_net
+
+  # ---------------------------------------------------------------------------
+  # pgAdmin 4 — Database GUI (profile: tools)
+  # ---------------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: flowsync_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@flowsync.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-pgadmin_secret}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - flowsync_net
+    profiles:
+      - tools
+
+  # ---------------------------------------------------------------------------
+  # FastAPI Backend
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: flowsync_api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flowsync}:${POSTGRES_PASSWORD:-flowsync_secret_change_me}@postgres:5432/${POSTGRES_DB:-flowsync_bi}
+      API_ENV: ${API_ENV:-development}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      API_PREFIX: ${API_PREFIX:-/api/v1}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./apps/api:/app
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - flowsync_net
+
+  # ---------------------------------------------------------------------------
+  # Next.js Frontend
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    container_name: flowsync_web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-FlowSync Revenue Intelligence}
+      NEXT_PUBLIC_USE_MOCK_DATA: ${NEXT_PUBLIC_USE_MOCK_DATA:-false}
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    networks:
+      - flowsync_net
+
+  # ---------------------------------------------------------------------------
+  # dbt Transformation Runner
+  # ---------------------------------------------------------------------------
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.7.0
+    container_name: flowsync_dbt
+    environment:
+      DBT_PROFILES_DIR: /app/dbt_project
+      DBT_TARGET: ${DBT_TARGET:-dev}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-flowsync_bi}
+      POSTGRES_USER: ${POSTGRES_USER:-flowsync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flowsync_secret_change_me}
+    volumes:
+      - ./dbt_project:/app/dbt_project
+    working_dir: /app/dbt_project
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - flowsync_net
+    # Run dbt on startup then exit (use 'docker-compose run dbt dbt run' for manual runs)
+    command: ["dbt", "deps"]
+    profiles:
+      - dbt
+
+  # ---------------------------------------------------------------------------
+  # Data Seeder (one-shot service)
+  # ---------------------------------------------------------------------------
+  seeder:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: flowsync_seeder
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flowsync}:${POSTGRES_PASSWORD:-flowsync_secret_change_me}@postgres:5432/${POSTGRES_DB:-flowsync_bi}
+      SEED_ACCOUNTS: ${SEED_ACCOUNTS:-200}
+      SEED_MONTHS: ${SEED_MONTHS:-24}
+      SEED_RANDOM_SEED: ${SEED_RANDOM_SEED:-42}
+    volumes:
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "/app/scripts/seed_db.py"]
+    networks:
+      - flowsync_net
+    profiles:
+      - seed
+
+  # ---------------------------------------------------------------------------
+  # CSV Ingestion Pipeline (one-shot service)
+  # ---------------------------------------------------------------------------
+  ingest:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: flowsync_ingest
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flowsync}:${POSTGRES_PASSWORD:-flowsync_secret_change_me}@postgres:5432/${POSTGRES_DB:-flowsync_bi}
+    volumes:
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "/app/scripts/ingest/ingest_pipeline.py", "--stage", "all"]
+    networks:
+      - flowsync_net
+    profiles:
+      - ingest
+
+  # ---------------------------------------------------------------------------
+  # Validation Runner (one-shot service)
+  # ---------------------------------------------------------------------------
+  validate:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: flowsync_validate
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flowsync}:${POSTGRES_PASSWORD:-flowsync_secret_change_me}@postgres:5432/${POSTGRES_DB:-flowsync_bi}
+    volumes:
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "/app/scripts/ingest/validate_counts.py"]
+    networks:
+      - flowsync_net
+    profiles:
+      - ingest
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+# ---------------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------------
+networks:
+  flowsync_net:
+    driver: bridge

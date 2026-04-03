@@ -1,0 +1,221 @@
+version: 2
+
+# =============================================================================
+# FlowSync BI — dbt Source Definitions
+# Raw schema: ingested CSV data loaded by ingest_pipeline.py
+# =============================================================================
+
+sources:
+  - name: raw
+    description: >
+      Bronze layer — raw data ingested from CSV files via the ingest pipeline.
+      All columns are TEXT type; no transformations applied at this layer.
+      Loaded into the `raw` PostgreSQL schema.
+    schema: raw
+    database: "{{ env_var('POSTGRES_DB', 'flowsync_bi') }}"
+    tags: ["bronze", "raw"]
+
+    loader: ingest_pipeline
+    loaded_at_field: _loaded_at
+
+    freshness:
+      warn_after:  {count: 24, period: hour}
+      error_after: {count: 48, period: hour}
+
+    tables:
+
+      # ── Accounts ──────────────────────────────────────────────────────────
+      - name: accounts
+        description: >
+          B2B company accounts — the primary customer entity.
+          One row per account. Contains firmographic data.
+        identifier: accounts
+        columns:
+          - name: account_id
+            description: Unique account identifier (UUID)
+            tests:
+              - not_null
+              - unique
+          - name: company_name
+            description: Legal company name
+            tests: [not_null]
+          - name: industry
+            description: Industry vertical
+          - name: region
+            description: Geographic region (NA, EMEA, APAC, LATAM)
+          - name: company_size
+            description: Employee count bucket (1-10, 11-50, 51-200, 201-1000, 1000+)
+          - name: acquisition_channel
+            description: How the account was acquired
+          - name: created_at
+            description: Account creation timestamp
+            tests: [not_null]
+          - name: _loaded_at
+            description: ETL load timestamp
+
+      # ── Plans ─────────────────────────────────────────────────────────────
+      - name: plans
+        description: >
+          Subscription plan catalog — starter, growth, business, enterprise.
+        identifier: plans
+        columns:
+          - name: plan_id
+            tests: [not_null, unique]
+          - name: plan_name
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ['starter', 'growth', 'business', 'enterprise']
+          - name: monthly_price
+            description: Base monthly price in USD
+            tests: [not_null]
+          - name: max_seats
+            description: Maximum user seats included
+
+      # ── Subscriptions ─────────────────────────────────────────────────────
+      - name: subscriptions
+        description: >
+          Account subscription records. One row per subscription period.
+          An account may have multiple rows if they upgraded/downgraded.
+        identifier: subscriptions
+        columns:
+          - name: subscription_id
+            tests: [not_null, unique]
+          - name: account_id
+            tests: [not_null]
+          - name: plan_id
+            tests: [not_null]
+          - name: status
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ['active', 'cancelled', 'trial', 'paused', 'expired']
+          - name: mrr
+            description: Monthly recurring revenue for this subscription
+          - name: start_date
+            tests: [not_null]
+          - name: end_date
+            description: Null if still active
+
+      # ── Invoices ──────────────────────────────────────────────────────────
+      - name: invoices
+        description: >
+          Invoice records — one per billing cycle per subscription.
+        identifier: invoices
+        columns:
+          - name: invoice_id
+            tests: [not_null, unique]
+          - name: account_id
+            tests: [not_null]
+          - name: subscription_id
+            tests: [not_null]
+          - name: amount
+            description: Invoice amount in USD
+          - name: status
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ['paid', 'failed', 'pending', 'refunded', 'void']
+          - name: invoice_date
+            tests: [not_null]
+          - name: due_date
+          - name: paid_date
+
+      # ── Usage Events ──────────────────────────────────────────────────────
+      - name: usage_events
+        description: >
+          Product usage telemetry — one row per user session or feature interaction.
+          High-volume table (~50K rows for 300 accounts over 24 months).
+        identifier: usage_events
+        columns:
+          - name: event_id
+            tests: [not_null, unique]
+          - name: account_id
+            tests: [not_null]
+          - name: user_id
+            tests: [not_null]
+          - name: event_type
+            description: Type of product interaction
+          - name: feature_name
+            description: Product feature used
+          - name: event_date
+            tests: [not_null]
+          - name: session_duration_minutes
+            description: Duration of the session in minutes
+
+      # ── Support Tickets ───────────────────────────────────────────────────
+      - name: support_tickets
+        description: >
+          Customer support ticket records.
+        identifier: support_tickets
+        columns:
+          - name: ticket_id
+            tests: [not_null, unique]
+          - name: account_id
+            tests: [not_null]
+          - name: priority
+            tests:
+              - accepted_values:
+                  values: ['low', 'medium', 'high', 'critical']
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ['open', 'in_progress', 'resolved', 'closed', 'escalated']
+          - name: csat_score
+            description: Customer satisfaction score 1-5
+          - name: created_at
+            tests: [not_null]
+          - name: resolved_at
+
+      # ── Leads ─────────────────────────────────────────────────────────────
+      - name: leads
+        description: >
+          Sales pipeline — leads progressing from inquiry to trial to paid.
+        identifier: leads
+        columns:
+          - name: lead_id
+            tests: [not_null, unique]
+          - name: company_name
+            tests: [not_null]
+          - name: acquisition_channel
+            tests: [not_null]
+          - name: lead_stage
+            tests:
+              - accepted_values:
+                  values: ['lead', 'qualified', 'trial', 'negotiation', 'closed_won', 'closed_lost']
+          - name: created_at
+            tests: [not_null]
+          - name: trial_start_date
+          - name: converted_date
+          - name: account_id
+            description: Populated when lead converts to paid account
+
+      # ── Features ──────────────────────────────────────────────────────────
+      - name: features
+        description: >
+          Product feature catalog — used to measure feature adoption breadth.
+        identifier: features
+        columns:
+          - name: feature_id
+            tests: [not_null, unique]
+          - name: feature_name
+            tests: [not_null]
+          - name: feature_category
+          - name: is_core
+            description: Whether this is a core (vs. advanced) feature
+
+      # ── Calendar ──────────────────────────────────────────────────────────
+      - name: calendar
+        description: >
+          Date dimension table — one row per day from 2022-01-01 to 2025-12-31.
+        identifier: calendar
+        columns:
+          - name: date_day
+            tests: [not_null, unique]
+          - name: year
+          - name: month
+          - name: quarter
+          - name: day_of_week
+          - name: is_weekend
+          - name: month_start_date
+          - name: month_end_date

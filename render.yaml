@@ -1,0 +1,92 @@
+# =============================================================================
+# FlowSync Revenue Intelligence — Render Deployment Configuration
+# =============================================================================
+# Deploy to Render: https://render.com
+# 1. Connect your GitHub repo to Render
+# 2. Render will auto-detect this file and create all services
+# 3. Set environment variables in Render dashboard
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # FastAPI Backend
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: flowsync-api
+    runtime: python
+    region: oregon
+    plan: starter
+    rootDir: apps/api
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: flowsync-db
+          property: connectionString
+      - key: API_ENV
+        value: production
+      - key: API_PREFIX
+        value: /api/v1
+      - key: LOG_LEVEL
+        value: INFO
+      - key: ALLOWED_ORIGINS
+        value: https://flowsync-revenue-intelligence.vercel.app
+      - key: SECRET_KEY
+        generateValue: true
+    autoDeploy: true
+
+  # ---------------------------------------------------------------------------
+  # dbt Runner (cron job — runs daily at 2am UTC)
+  # ---------------------------------------------------------------------------
+  - type: cron
+    name: flowsync-dbt-runner
+    runtime: python
+    region: oregon
+    plan: starter
+    rootDir: .
+    buildCommand: pip install dbt-postgres==1.7.0
+    startCommand: >
+      dbt run
+      --project-dir dbt_project
+      --profiles-dir dbt_project
+      --target prod
+    schedule: "0 2 * * *"
+    envVars:
+      - key: DBT_TARGET
+        value: prod
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: flowsync-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: flowsync-db
+          property: port
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: flowsync-db
+          property: database
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: flowsync-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: flowsync-db
+          property: password
+
+# ---------------------------------------------------------------------------
+# PostgreSQL Database
+# ---------------------------------------------------------------------------
+databases:
+  - name: flowsync-db
+    region: oregon
+    plan: starter
+    databaseName: flowsync_bi
+    user: flowsync
+    postgresMajorVersion: 16
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: Allow all (restrict in production)

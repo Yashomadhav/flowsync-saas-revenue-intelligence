@@ -1,0 +1,157 @@
+name: dbt — Nightly Transformation Run
+
+on:
+  schedule:
+    # Run every night at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'dbt target environment'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - dev
+          - prod
+      full_refresh:
+        description: 'Run with --full-refresh flag'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DBT_VERSION: '1.7.0'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # dbt Run — Transform Bronze → Silver → Gold
+  # ---------------------------------------------------------------------------
+  dbt-run:
+    name: dbt Run (${{ github.event.inputs.target || 'prod' }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dbt
+        run: |
+          pip install dbt-postgres==${{ env.DBT_VERSION }}
+
+      - name: Create dbt profiles
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml << EOF
+          flowsync:
+            target: ${{ github.event.inputs.target || 'prod' }}
+            outputs:
+              prod:
+                type: postgres
+                host: ${{ secrets.PROD_POSTGRES_HOST }}
+                port: 5432
+                dbname: ${{ secrets.PROD_POSTGRES_DB }}
+                user: ${{ secrets.PROD_POSTGRES_USER }}
+                password: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+                schema: public
+                threads: 4
+              dev:
+                type: postgres
+                host: ${{ secrets.DEV_POSTGRES_HOST }}
+                port: 5432
+                dbname: ${{ secrets.DEV_POSTGRES_DB }}
+                user: ${{ secrets.DEV_POSTGRES_USER }}
+                password: ${{ secrets.DEV_POSTGRES_PASSWORD }}
+                schema: public
+                threads: 2
+          EOF
+
+      - name: Install dbt packages
+        working-directory: dbt_project
+        run: dbt deps
+
+      - name: Run dbt models (Bronze → Silver → Gold)
+        working-directory: dbt_project
+        run: |
+          if [ "${{ github.event.inputs.full_refresh }}" = "true" ]; then
+            dbt run --full-refresh --target ${{ github.event.inputs.target || 'prod' }}
+          else
+            dbt run --target ${{ github.event.inputs.target || 'prod' }}
+          fi
+
+      - name: Run dbt tests
+        working-directory: dbt_project
+        run: dbt test --target ${{ github.event.inputs.target || 'prod' }}
+
+      - name: Generate dbt docs
+        working-directory: dbt_project
+        run: dbt docs generate --target ${{ github.event.inputs.target || 'prod' }}
+
+      - name: Upload dbt docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-docs-${{ github.run_id }}
+          path: dbt_project/target/
+          retention-days: 30
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `dbt Run Failed — ${new Date().toISOString().split('T')[0]}`,
+              body: `The nightly dbt transformation run failed.\n\nRun ID: ${context.runId}\nWorkflow: ${context.workflow}\n\nPlease check the [workflow logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).`,
+              labels: ['bug', 'data-pipeline']
+            })
+
+  # ---------------------------------------------------------------------------
+  # dbt Source Freshness Check
+  # ---------------------------------------------------------------------------
+  dbt-freshness:
+    name: dbt Source Freshness
+    runs-on: ubuntu-latest
+    needs: dbt-run
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dbt
+        run: pip install dbt-postgres==${{ env.DBT_VERSION }}
+
+      - name: Create dbt profiles
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml << EOF
+          flowsync:
+            target: ${{ github.event.inputs.target || 'prod' }}
+            outputs:
+              prod:
+                type: postgres
+                host: ${{ secrets.PROD_POSTGRES_HOST }}
+                port: 5432
+                dbname: ${{ secrets.PROD_POSTGRES_DB }}
+                user: ${{ secrets.PROD_POSTGRES_USER }}
+                password: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+                schema: public
+                threads: 4
+          EOF
+
+      - name: Check source freshness
+        working-directory: dbt_project
+        run: dbt source freshness --target ${{ github.event.inputs.target || 'prod' }} || true

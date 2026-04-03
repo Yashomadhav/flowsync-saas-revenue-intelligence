@@ -1,0 +1,128 @@
+name: 'flowsync_bi'
+version: '1.1.0'
+config-version: 2
+
+profile: 'flowsync'
+
+# ---------------------------------------------------------------------------
+# Path configuration
+# ---------------------------------------------------------------------------
+model-paths:    ["models"]
+analysis-paths: ["analyses"]
+test-paths:     ["tests"]
+seed-paths:     ["seeds"]
+macro-paths:    ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path:  "target"
+clean-targets: ["target", "dbt_packages"]
+
+# ---------------------------------------------------------------------------
+# Model configuration — medallion architecture
+# ---------------------------------------------------------------------------
+models:
+  flowsync_bi:
+
+    # ── Bronze: raw ingested data (views over raw schema) ──────────────────
+    bronze:
+      +schema:        bronze
+      +materialized:  view
+      +tags:          ["bronze", "raw"]
+      +docs:
+        node_color: "#8B4513"
+
+    # ── Staging: typed, cleaned, renamed ──────────────────────────────────
+    staging:
+      +schema:        staging
+      +materialized:  view
+      +tags:          ["staging", "silver"]
+      +docs:
+        node_color: "#4682B4"
+
+    # ── Intermediate: business logic joins ─────────────────────────────────
+    intermediate:
+      +schema:        intermediate
+      +materialized:  ephemeral
+      +tags:          ["intermediate"]
+      +docs:
+        node_color: "#9370DB"
+
+    # ── Marts: gold layer — facts and aggregates ───────────────────────────
+    marts:
+      +schema:        marts
+      +materialized:  table
+      +tags:          ["marts", "gold"]
+      +docs:
+        node_color: "#DAA520"
+
+      # Incremental fact tables
+      fct_mrr_movements:
+        +materialized:  incremental
+        +unique_key:    ['month_date', 'account_id']
+        +on_schema_change: sync_all_columns
+        +incremental_strategy: merge
+
+      fct_account_monthly_health:
+        +materialized:  incremental
+        +unique_key:    ['month_date', 'account_id']
+        +on_schema_change: sync_all_columns
+        +incremental_strategy: merge
+
+      # Summary marts — full refresh
+      mart_exec_revenue_summary:
+        +materialized:  table
+        +post-hook:     "ANALYZE {{ this }}"
+
+      mart_customer_success_summary:
+        +materialized:  table
+        +post-hook:     "ANALYZE {{ this }}"
+
+# ---------------------------------------------------------------------------
+# Seeds configuration
+# ---------------------------------------------------------------------------
+seeds:
+  flowsync_bi:
+    +schema: seeds
+
+# ---------------------------------------------------------------------------
+# Snapshots
+# ---------------------------------------------------------------------------
+snapshots:
+  flowsync_bi:
+    +target_schema: snapshots
+    +strategy:      timestamp
+    +updated_at:    updated_at
+
+# ---------------------------------------------------------------------------
+# Project variables
+# ---------------------------------------------------------------------------
+vars:
+  # Date range
+  start_date:       '2023-01-01'
+  lookback_months:  24
+
+  # Business rules
+  churn_threshold_days:     90    # days without activity = churned
+  usage_drop_threshold:     0.40  # 40% MoM drop = risk flag
+  no_login_days:            14    # days without login = risk flag
+  low_seat_util_threshold:  0.25  # <25% seat utilization = risk flag
+  low_csat_threshold:       3     # CSAT < 3 = risk flag
+  open_ticket_threshold:    2     # 2+ open high-priority tickets = risk flag
+
+  # Health score weights (must sum to 1.0)
+  weight_usage_frequency:   0.25
+  weight_seat_utilization:  0.20
+  weight_feature_adoption:  0.15
+  weight_support_burden:    0.15
+  weight_csat:              0.10
+  weight_payment_health:    0.10
+  weight_tenure_stability:  0.05
+
+  # Plan names
+  plans: ['starter', 'growth', 'business', 'enterprise']
+
+  # MRR thresholds by plan
+  starter_mrr:    99
+  growth_mrr:     299
+  business_mrr:   799
+  enterprise_mrr: 2499
