@@ -1,0 +1,347 @@
+version: 2
+
+models:
+  # ---------------------------------------------------------------------------
+  # stg_accounts
+  # ---------------------------------------------------------------------------
+  - name: stg_accounts
+    description: >
+      Cleaned and typed account records. One row per B2B account (company).
+      Includes firmographic enrichment, size tiers, and lifecycle status.
+    columns:
+      - name: account_id
+        description: UUID primary key for the account
+        tests:
+          - unique
+          - not_null
+      - name: company_name
+        description: Legal company name
+        tests:
+          - not_null
+      - name: industry
+        description: Industry vertical
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Technology', 'Finance', 'Healthcare', 'Retail', 'Manufacturing',
+                       'Education', 'Media', 'Logistics', 'Real Estate', 'Professional Services']
+      - name: company_size
+        description: Employee count bucket
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['1-10', '11-50', '51-200', '201-500', '501-1000', '1001-5000', '5000+']
+      - name: region
+        description: Geographic region
+        tests:
+          - not_null
+      - name: acquisition_channel
+        description: How the account was acquired
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['organic', 'paid_search', 'referral', 'outbound', 'partner', 'event', 'content']
+      - name: account_status
+        description: Current lifecycle status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['active', 'trial', 'churned', 'suspended', 'pending']
+      - name: is_active
+        description: Boolean flag for active accounts
+        tests:
+          - not_null
+      - name: created_at
+        description: Account creation timestamp
+        tests:
+          - not_null
+
+  # ---------------------------------------------------------------------------
+  # stg_plans
+  # ---------------------------------------------------------------------------
+  - name: stg_plans
+    description: >
+      Cleaned product plan catalog with pricing tiers and feature limits.
+    columns:
+      - name: plan_id
+        description: UUID primary key for the plan
+        tests:
+          - unique
+          - not_null
+      - name: plan_name
+        description: Human-readable plan name
+        tests:
+          - unique
+          - not_null
+          - accepted_values:
+              values: ['starter', 'growth', 'business', 'enterprise']
+      - name: monthly_price
+        description: Monthly price in USD
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: annual_price
+        description: Annual price in USD (monthly equivalent)
+        tests:
+          - not_null
+      - name: plan_tier_order
+        description: Numeric ordering of plan tiers (1=starter, 4=enterprise)
+        tests:
+          - not_null
+
+  # ---------------------------------------------------------------------------
+  # stg_subscriptions
+  # ---------------------------------------------------------------------------
+  - name: stg_subscriptions
+    description: >
+      Cleaned subscription records with lifecycle dates and billing metadata.
+      One row per subscription period (accounts can have multiple over time).
+    columns:
+      - name: subscription_id
+        description: UUID primary key
+        tests:
+          - unique
+          - not_null
+      - name: account_id
+        description: FK to stg_accounts
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_accounts')
+              field: account_id
+      - name: plan_id
+        description: FK to stg_plans
+        tests:
+          - not_null
+      - name: mrr
+        description: Monthly recurring revenue for this subscription in USD
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: status
+        description: Subscription status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['active', 'cancelled', 'paused', 'trial', 'past_due']
+      - name: started_at
+        description: Subscription start date
+        tests:
+          - not_null
+      - name: billing_cycle
+        description: Monthly or annual billing
+        tests:
+          - accepted_values:
+              values: ['monthly', 'annual']
+
+  # ---------------------------------------------------------------------------
+  # stg_invoices
+  # ---------------------------------------------------------------------------
+  - name: stg_invoices
+    description: >
+      Cleaned invoice records with payment status and amounts.
+    columns:
+      - name: invoice_id
+        description: UUID primary key
+        tests:
+          - unique
+          - not_null
+      - name: account_id
+        description: FK to stg_accounts
+        tests:
+          - not_null
+      - name: subscription_id
+        description: FK to stg_subscriptions
+        tests:
+          - not_null
+      - name: amount_due
+        description: Invoice amount in USD
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: status
+        description: Payment status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['paid', 'failed', 'pending', 'refunded', 'void']
+      - name: invoice_date
+        description: Invoice issue date
+        tests:
+          - not_null
+
+  # ---------------------------------------------------------------------------
+  # stg_usage_events
+  # ---------------------------------------------------------------------------
+  - name: stg_usage_events
+    description: >
+      Cleaned product usage events. One row per user action/feature interaction.
+    columns:
+      - name: event_id
+        description: UUID primary key
+        tests:
+          - unique
+          - not_null
+      - name: account_id
+        description: FK to stg_accounts
+        tests:
+          - not_null
+      - name: feature_id
+        description: FK to stg_features
+        tests:
+          - not_null
+      - name: event_type
+        description: Type of usage event
+        tests:
+          - not_null
+      - name: occurred_at
+        description: Event timestamp
+        tests:
+          - not_null
+
+  # ---------------------------------------------------------------------------
+  # stg_support_tickets
+  # ---------------------------------------------------------------------------
+  - name: stg_support_tickets
+    description: >
+      Cleaned support ticket records with priority, status, and resolution metadata.
+    columns:
+      - name: ticket_id
+        description: UUID primary key
+        tests:
+          - unique
+          - not_null
+      - name: account_id
+        description: FK to stg_accounts
+        tests:
+          - not_null
+      - name: priority
+        description: Ticket priority level
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['low', 'medium', 'high', 'critical']
+      - name: status
+        description: Ticket resolution status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['open', 'in_progress', 'resolved', 'closed', 'escalated']
+      - name: created_at
+        description: Ticket creation timestamp
+        tests:
+          - not_null
+
+  # ---------------------------------------------------------------------------
+  # stg_leads
+  # ---------------------------------------------------------------------------
+  - name: stg_leads
+    description: >
+      Cleaned lead/opportunity records tracking the sales funnel from
+      lead capture through trial to paid conversion.
+    columns:
+      - name: lead_id
+        description: UUID primary key
+        tests:
+          - unique
+          - not_null
+      - name: channel
+        description: Lead acquisition channel
+        tests:
+          - not_null
+      - name: lead_status
+        description: Current funnel stage
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['new', 'qualified', 'trial', 'converted', 'lost', 'disqualified']
+      - name: created_at
+        description: Lead capture timestamp
+        tests:
+          - not_null
+
+  # ---------------------------------------------------------------------------
+  # stg_customers
+  # ---------------------------------------------------------------------------
+  - name: stg_customers
+    description: >
+      Customer/contact records derived from accounts. One primary contact per account.
+    columns:
+      - name: customer_id
+        description: Surrogate key (hash of account_id)
+        tests:
+          - unique
+          - not_null
+      - name: account_id
+        description: FK to stg_accounts
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_accounts')
+              field: account_id
+      - name: email
+        description: Primary contact email (lowercased)
+        tests:
+          - not_null
+      - name: is_active
+        description: Whether the customer account is active
+        tests:
+          - not_null
+
+  # ---------------------------------------------------------------------------
+  # stg_features
+  # ---------------------------------------------------------------------------
+  - name: stg_features
+    description: >
+      Product feature catalog with tier availability and health score weights.
+    columns:
+      - name: feature_id
+        description: UUID primary key
+        tests:
+          - unique
+          - not_null
+      - name: feature_name
+        description: Human-readable feature name
+        tests:
+          - not_null
+      - name: feature_tier
+        description: Minimum plan tier required
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['starter', 'growth', 'business', 'enterprise']
+      - name: is_core
+        description: Whether this is a core product feature
+        tests:
+          - not_null
+
+  # ---------------------------------------------------------------------------
+  # stg_calendar
+  # ---------------------------------------------------------------------------
+  - name: stg_calendar
+    description: >
+      Date dimension / calendar spine from 2022-01-01 to current_date + 365 days.
+      Materialized as a table for join performance.
+    columns:
+      - name: calendar_date
+        description: The date (primary key)
+        tests:
+          - unique
+          - not_null
+      - name: month_key
+        description: YYYY-MM formatted month identifier
+        tests:
+          - not_null
+      - name: year
+        description: Calendar year
+        tests:
+          - not_null
+      - name: month
+        description: Calendar month (1-12)
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "between 1 and 12"

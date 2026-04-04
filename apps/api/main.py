@@ -14,7 +14,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from db.database import check_db_health
-from routers import executive, revenue, cohorts, health, funnel
+from routers import executive, revenue, cohorts, health, funnel, ingest, webhook
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -66,7 +66,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -98,6 +98,8 @@ app.include_router(revenue.router,   prefix=f"{API_PREFIX}/revenue",   tags=["Re
 app.include_router(cohorts.router,   prefix=f"{API_PREFIX}/cohorts",   tags=["Cohort Retention"])
 app.include_router(health.router,    prefix=f"{API_PREFIX}/health",    tags=["Customer Health"])
 app.include_router(funnel.router,    prefix=f"{API_PREFIX}/funnel",    tags=["Funnel & Growth"])
+app.include_router(ingest.router,    prefix=f"{API_PREFIX}",           tags=["Ingest"])
+app.include_router(webhook.router,   prefix=f"{API_PREFIX}",           tags=["Webhooks"])
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +116,12 @@ async def health_check() -> dict:
         "version": "1.0.0",
         "environment": API_ENV,
     }
+
+
+@app.get(f"{API_PREFIX}/health", tags=["System"], summary="Versioned health check")
+async def versioned_health_check() -> dict:
+    """Versioned health check for API clients expecting /api/v1/health."""
+    return await health_check()
 
 
 @app.get("/", tags=["System"], summary="API root")

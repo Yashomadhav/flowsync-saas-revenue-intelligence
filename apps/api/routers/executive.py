@@ -1,181 +1,114 @@
-"""
-Executive Overview Router
-Endpoints: summary, mrr-trend, waterfall, by-plan, by-region, top-accounts
-"""
+"""Executive Overview Router — delegates to MetricsService."""
 from __future__ import annotations
-
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import text
-
 from db.database import get_db
+from services import MetricsService
 
 router = APIRouter()
 
 
-def _query(db: Session, sql: str, params: dict | None = None) -> list[dict]:
-    result = db.execute(text(sql), params or {})
-    cols = list(result.keys())
-    return [dict(zip(cols, row)) for row in result.fetchall()]
+def _svc(db: Session) -> MetricsService:
+    return MetricsService(db)
 
 
-@router.get("/summary", summary="Executive KPI summary")
-def get_executive_summary(db: Annotated[Session, Depends(get_db)]) -> dict:
-    sql = (
-        "WITH latest AS ("
-        "  SELECT * FROM mart_exec_revenue_summary ORDER BY month DESC LIMIT 1"
-        "), prev AS ("
-        "  SELECT * FROM mart_exec_revenue_summary ORDER BY month DESC LIMIT 1 OFFSET 1"
-        ") "
-        "SELECT l.month, l.total_mrr, l.arr, l.new_mrr, l.expansion_mrr, "
-        "l.contraction_mrr, l.churned_mrr, l.reactivation_mrr, l.net_new_mrr, "
-        "l.active_accounts, l.new_accounts, l.churned_accounts, l.mrr_growth_pct, "
-        "l.arpa, l.logo_churn_rate, l.revenue_churn_rate, l.nrr, l.grr, "
-        "p.total_mrr AS prev_mrr, p.active_accounts AS prev_active_accounts "
-        "FROM latest l LEFT JOIN prev p ON TRUE"
-    )
-    rows = _query(db, sql)
-    return rows[0] if rows else {}
+@router.get("/summary")
+def get_executive_summary(
+    db: Annotated[Session, Depends(get_db)],
+    month_key: Optional[str] = Query(default=None, description="YYYY-MM"),
+) -> dict:
+    try:
+        return _svc(db).get_latest_exec_kpi(month_key=month_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/mrr-trend", summary="MRR trend last N months")
+@router.get("/mrr-trend")
 def get_mrr_trend(
     db: Annotated[Session, Depends(get_db)],
-    months: int = Query(default=12, ge=3, le=36),
-) -> list[dict]:
-    sql = (
-        "SELECT month, total_mrr, arr, net_new_mrr, new_mrr, expansion_mrr, "
-        "contraction_mrr, churned_mrr, reactivation_mrr, active_accounts, "
-        "mrr_growth_pct, nrr, arpa "
-        "FROM mart_exec_revenue_summary "
-        "ORDER BY month DESC LIMIT :months"
-    )
-    rows = _query(db, sql, {"months": months})
-    return list(reversed(rows))
+    months: int = Query(default=24, ge=3, le=36),
+) -> dict:
+    try:
+        return _svc(db).get_mrr_trend(months=months)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/waterfall", summary="MRR waterfall bridge")
+@router.get("/waterfall")
 def get_mrr_waterfall(
     db: Annotated[Session, Depends(get_db)],
-    month: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
+    month_key: Optional[str] = Query(default=None, description="YYYY-MM"),
 ) -> dict:
-    if month:
-        sql = (
-            "SELECT month, "
-            "COALESCE(LAG(total_mrr) OVER (ORDER BY month), 0) AS starting_mrr, "
-            "new_mrr, expansion_mrr, reactivation_mrr, contraction_mrr, "
-            "churned_mrr, net_new_mrr, total_mrr AS ending_mrr "
-            "FROM mart_exec_revenue_summary WHERE month = :month"
-        )
-        rows = _query(db, sql, {"month": month})
-    else:
-        sql = (
-            "SELECT month, "
-            "COALESCE(LAG(total_mrr) OVER (ORDER BY month), 0) AS starting_mrr, "
-            "new_mrr, expansion_mrr, reactivation_mrr, contraction_mrr, "
-            "churned_mrr, net_new_mrr, total_mrr AS ending_mrr "
-            "FROM mart_exec_revenue_summary ORDER BY month DESC LIMIT 1"
-        )
-        rows = _query(db, sql)
-    if not rows:
-        return {}
-    r = rows[0]
-    return {
-        "month": str(r["month"]),
-        "waterfall": [
-            {"label": "Starting MRR",  "value": float(r["starting_mrr"] or 0),    "type": "start"},
-            {"label": "New",           "value": float(r["new_mrr"] or 0),          "type": "positive"},
-            {"label": "Expansion",     "value": float(r["expansion_mrr"] or 0),    "type": "positive"},
-            {"label": "Reactivation",  "value": float(r["reactivation_mrr"] or 0), "type": "positive"},
-            {"label": "Contraction",   "value": -float(r["contraction_mrr"] or 0), "type": "negative"},
-            {"label": "Churn",         "value": -float(r["churned_mrr"] or 0),     "type": "negative"},
-            {"label": "Ending MRR",    "value": float(r["ending_mrr"] or 0),       "type": "end"},
-        ],
-        "net_new_mrr": float(r["net_new_mrr"] or 0),
-    }
+    try:
+        return _svc(db).get_waterfall(month_key=month_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/by-plan", summary="Revenue by plan")
+@router.get("/by-plan")
 def get_revenue_by_plan(
     db: Annotated[Session, Depends(get_db)],
-    months: int = Query(default=1, ge=1, le=12),
-) -> list[dict]:
-    sql = (
-        "SELECT plan_name, SUM(current_mrr) AS total_mrr, "
-        "COUNT(DISTINCT account_id) AS account_count, "
-        "AVG(current_mrr) AS avg_mrr_per_account, "
-        "SUM(expansion_mrr) AS expansion_mrr, SUM(churned_mrr) AS churned_mrr "
-        "FROM fct_mrr_movements "
-        "WHERE month >= DATE_TRUNC('month', CURRENT_DATE) - (:months - 1) * INTERVAL '1 month' "
-        "AND current_mrr > 0 "
-        "GROUP BY plan_name ORDER BY total_mrr DESC"
-    )
-    return _query(db, sql, {"months": months})
+    month_key: Optional[str] = Query(default=None),
+) -> dict:
+    try:
+        return _svc(db).get_revenue_by_dimension("plan_name", month_key=month_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/by-region", summary="Revenue by region")
+@router.get("/by-region")
 def get_revenue_by_region(
     db: Annotated[Session, Depends(get_db)],
-    months: int = Query(default=1, ge=1, le=12),
-) -> list[dict]:
-    sql = (
-        "SELECT region, SUM(current_mrr) AS total_mrr, "
-        "COUNT(DISTINCT account_id) AS account_count, "
-        "AVG(current_mrr) AS avg_mrr, "
-        "SUM(new_mrr) AS new_mrr, SUM(churned_mrr) AS churned_mrr "
-        "FROM fct_mrr_movements "
-        "WHERE month >= DATE_TRUNC('month', CURRENT_DATE) - (:months - 1) * INTERVAL '1 month' "
-        "AND current_mrr > 0 "
-        "GROUP BY region ORDER BY total_mrr DESC"
-    )
-    return _query(db, sql, {"months": months})
+    month_key: Optional[str] = Query(default=None),
+) -> dict:
+    try:
+        return _svc(db).get_revenue_by_dimension("region", month_key=month_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/by-industry", summary="Revenue by industry")
+@router.get("/by-industry")
 def get_revenue_by_industry(
     db: Annotated[Session, Depends(get_db)],
-    months: int = Query(default=1, ge=1, le=12),
-) -> list[dict]:
-    sql = (
-        "SELECT industry, SUM(current_mrr) AS total_mrr, "
-        "COUNT(DISTINCT account_id) AS account_count, "
-        "AVG(current_mrr) AS avg_mrr "
-        "FROM fct_mrr_movements "
-        "WHERE month >= DATE_TRUNC('month', CURRENT_DATE) - (:months - 1) * INTERVAL '1 month' "
-        "AND current_mrr > 0 "
-        "GROUP BY industry ORDER BY total_mrr DESC"
-    )
-    return _query(db, sql, {"months": months})
+    month_key: Optional[str] = Query(default=None),
+) -> dict:
+    try:
+        return _svc(db).get_revenue_by_dimension("industry", month_key=month_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/top-expanding", summary="Top expanding accounts")
+@router.get("/by-company-size")
+def get_revenue_by_company_size(
+    db: Annotated[Session, Depends(get_db)],
+    month_key: Optional[str] = Query(default=None),
+) -> dict:
+    try:
+        return _svc(db).get_revenue_by_dimension("company_size", month_key=month_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/top-expanding")
 def get_top_expanding(
     db: Annotated[Session, Depends(get_db)],
     limit: int = Query(default=10, ge=1, le=50),
-) -> list[dict]:
-    sql = (
-        "SELECT account_id, company_name, plan_name, region, company_size, "
-        "current_mrr, previous_mrr, expansion_mrr, mrr_growth_pct "
-        "FROM fct_mrr_movements "
-        "WHERE month = DATE_TRUNC('month', CURRENT_DATE) AND expansion_mrr > 0 "
-        "ORDER BY expansion_mrr DESC LIMIT :limit"
-    )
-    return _query(db, sql, {"limit": limit})
+    month_key: Optional[str] = Query(default=None),
+) -> dict:
+    try:
+        return _svc(db).get_top_accounts(sort_by="expansion", limit=limit, month_key=month_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/top-churn-risk", summary="Top churn-risk accounts")
+@router.get("/top-churn-risk")
 def get_top_churn_risk(
     db: Annotated[Session, Depends(get_db)],
     limit: int = Query(default=10, ge=1, le=50),
-) -> list[dict]:
-    sql = (
-        "SELECT account_id, company_name, plan_name, region, company_size, "
-        "current_mrr, health_score, risk_level, risk_flag_count, "
-        "flag_usage_drop, flag_no_login, flag_open_tickets, "
-        "flag_payment_failure, flag_low_csat, flag_low_seat_util "
-        "FROM mart_customer_success_summary "
-        "WHERE risk_level IN ('at_risk', 'critical') "
-        "ORDER BY health_score ASC, current_mrr DESC LIMIT :limit"
-    )
-    return _query(db, sql, {"limit": limit})
+    month_key: Optional[str] = Query(default=None),
+) -> dict:
+    try:
+        return _svc(db).get_top_accounts(sort_by="churn_risk", limit=limit, month_key=month_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

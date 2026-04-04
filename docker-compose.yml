@@ -32,9 +32,7 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Run full medallion schema on first init
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
-      # Legacy init for backward compat
+      # Single self-contained init (creates raw/staging/marts schemas + all tables)
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
     command: >
       postgres

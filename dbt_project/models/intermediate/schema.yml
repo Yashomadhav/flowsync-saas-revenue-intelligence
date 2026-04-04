@@ -1,0 +1,318 @@
+version: 2
+
+models:
+  # ============================================================================
+  # int_account_months
+  # ============================================================================
+  - name: int_account_months
+    description: >
+      Account × calendar month spine. One row per account per month since
+      account creation. Foundation for all monthly aggregations.
+    columns:
+      - name: account_month_key
+        description: Surrogate key (account_id + month_key)
+        tests:
+          - unique
+          - not_null
+
+      - name: account_id
+        description: FK to stg_accounts
+        tests:
+          - not_null
+
+      - name: month_start_date
+        description: First day of the calendar month
+        tests:
+          - not_null
+
+      - name: month_key
+        description: YYYY-MM string for the month
+        tests:
+          - not_null
+
+      - name: cohort_month
+        description: YYYY-MM of the account's first month (acquisition cohort)
+        tests:
+          - not_null
+
+      - name: months_since_created
+        description: Integer months elapsed since account creation (0 = first month)
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 120
+
+      - name: is_first_month
+        description: True if this is the account's first calendar month
+        tests:
+          - not_null
+
+  # ============================================================================
+  # int_subscription_mrr
+  # ============================================================================
+  - name: int_subscription_mrr
+    description: >
+      MRR per subscription per month with movement classification
+      (new, expansion, contraction, retained, reactivation).
+      Core model for all revenue waterfall calculations.
+    columns:
+      - name: sub_month_key
+        description: Surrogate key (subscription_id + month_key)
+        tests:
+          - unique
+          - not_null
+
+      - name: subscription_id
+        description: FK to stg_subscriptions
+        tests:
+          - not_null
+
+      - name: account_id
+        description: FK to stg_accounts
+        tests:
+          - not_null
+
+      - name: mrr
+        description: Monthly recurring revenue for this subscription this month
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000
+
+      - name: mrr_movement_type
+        description: Classification of MRR change (new/expansion/contraction/retained/reactivation)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['new', 'expansion', 'contraction', 'retained', 'reactivation']
+
+      - name: seat_utilization_rate
+        description: seats_used / seats_purchased (0.0 to 1.0)
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              mostly: 0.99
+
+  # ============================================================================
+  # int_usage_monthly
+  # ============================================================================
+  - name: int_usage_monthly
+    description: >
+      Monthly product usage aggregates per account. Powers health scoring,
+      churn risk detection, and feature adoption analytics.
+    columns:
+      - name: account_month_key
+        description: Surrogate key (account_id + month_key)
+        tests:
+          - unique
+          - not_null
+
+      - name: account_id
+        description: FK to stg_accounts
+        tests:
+          - not_null
+
+      - name: month_start_date
+        description: First day of the calendar month
+        tests:
+          - not_null
+
+      - name: total_events
+        description: Total product events in the month
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000
+
+      - name: active_users
+        description: Distinct users who triggered events this month
+        tests:
+          - not_null
+
+      - name: distinct_features_used
+        description: Number of distinct features used this month
+        tests:
+          - not_null
+
+      - name: usage_intensity
+        description: Bucketed usage level (power_user/regular/occasional/minimal/inactive)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['power_user', 'regular', 'occasional', 'minimal', 'inactive']
+
+      - name: has_usage_drop_flag
+        description: True if usage dropped >40% vs prior month
+        tests:
+          - not_null
+
+      - name: has_no_login_flag
+        description: True if no activity in last 14 days of month
+        tests:
+          - not_null
+
+  # ============================================================================
+  # int_ticket_monthly
+  # ============================================================================
+  - name: int_ticket_monthly
+    description: >
+      Monthly support ticket aggregates per account. Powers health scoring
+      (support burden component) and churn risk signals.
+    columns:
+      - name: account_month_key
+        description: Surrogate key (account_id + month_key)
+        tests:
+          - unique
+          - not_null
+
+      - name: account_id
+        description: FK to stg_accounts
+        tests:
+          - not_null
+
+      - name: total_tickets
+        description: Total support tickets opened this month
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 500
+
+      - name: avg_csat_score
+        description: Average CSAT score (1-5) for resolved tickets this month
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 5
+              mostly: 0.95
+
+      - name: support_burden_score
+        description: Composite support burden score (0-100, higher = more burden)
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+
+      - name: support_health_score
+        description: Inverse of burden score (0-100, higher = healthier)
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+
+      - name: has_high_priority_flag
+        description: True if 2+ unresolved high/critical tickets this month
+        tests:
+          - not_null
+
+      - name: has_low_csat_flag
+        description: True if avg CSAT < 3 with at least 1 response
+        tests:
+          - not_null
+
+  # ============================================================================
+  # int_funnel_progression
+  # ============================================================================
+  - name: int_funnel_progression
+    description: >
+      Lead-to-trial-to-paid funnel progression. One row per lead with
+      stage classification, duration metrics, and conversion linkage.
+    columns:
+      - name: lead_id
+        description: PK from stg_leads
+        tests:
+          - unique
+          - not_null
+
+      - name: funnel_stage
+        description: Current funnel stage of the lead
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['lead', 'qualified', 'demo_requested', 'demo_completed',
+                       'trial', 'paid', 'lost']
+
+      - name: funnel_stage_order
+        description: Numeric ordering of funnel stage (0=lost, 1=lead, ..., 6=paid)
+        tests:
+          - not_null
+
+      - name: is_lead
+        description: Always true (every row is a lead)
+        tests:
+          - not_null
+
+      - name: days_lead_to_paid
+        description: Total days from lead creation to first paid subscription
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 730
+              mostly: 0.99
+
+      - name: conversion_velocity
+        description: Speed bucket for lead-to-paid conversion
+        tests:
+          - accepted_values:
+              values: ['fast', 'normal', 'slow', 'very_slow', 'in_progress']
+
+  # ============================================================================
+  # int_cohort_base
+  # ============================================================================
+  - name: int_cohort_base
+    description: >
+      Cohort retention base table. One row per account per cohort-month period.
+      Tracks retention status, MRR, and cohort-level aggregates for heatmap analysis.
+    columns:
+      - name: cohort_record_key
+        description: Surrogate key (account_id + cohort_month + months_since_created)
+        tests:
+          - unique
+          - not_null
+
+      - name: account_id
+        description: FK to stg_accounts
+        tests:
+          - not_null
+
+      - name: cohort_month
+        description: YYYY-MM of the account's acquisition cohort
+        tests:
+          - not_null
+
+      - name: months_since_created
+        description: Months elapsed since cohort start (0 = acquisition month)
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 120
+
+      - name: retention_status
+        description: Account retention classification for this period
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['new', 'retained', 'reactivated', 'churned', 'inactive', 'unknown']
+
+      - name: cohort_logo_retention_rate
+        description: Fraction of cohort accounts still active (0.0 to 1.0)
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              mostly: 0.99
+
+      - name: cohort_revenue_retention_rate
+        description: Cohort MRR as fraction of starting MRR (can exceed 1.0 with expansion)
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 5
+              mostly: 0.99
