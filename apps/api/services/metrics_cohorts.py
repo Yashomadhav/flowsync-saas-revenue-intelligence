@@ -1,5 +1,5 @@
 """Cohort retention queries."""
-from .metrics_helpers import _q, _div, _pct, _f, _i, _s, _latest
+from .metrics_helpers import _q, _div, _pct, _f, _i, _s
 
 
 class CohortsMixin:
@@ -64,7 +64,7 @@ class CohortsMixin:
 
     def get_retention_by_segment(self, dimension="plan_name", period_months=12):
         if dimension not in {"plan_name", "company_size", "region"}:
-            raise ValueError(f"dimension must be one of plan_name, company_size, region")
+            raise ValueError("dimension must be one of plan_name, company_size, region")
         # Query account-level health data grouped by segment dimension.
         # fct_customer_cohorts is cohort-level (no account_id), so we use
         # fct_account_monthly_health which has both segment columns and monthly data.

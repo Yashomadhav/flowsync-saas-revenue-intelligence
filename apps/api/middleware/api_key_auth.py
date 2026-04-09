@@ -24,7 +24,7 @@ from enum import Enum
 from typing import Optional
 
 import structlog
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader
 
 logger = structlog.get_logger(__name__)
