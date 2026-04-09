@@ -1,6 +1,6 @@
 """Cohort Retention Router — delegates to MetricsService."""
 from __future__ import annotations
-from typing import Annotated, Optional
+from typing import Annotated
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from db.database import get_db

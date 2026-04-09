@@ -4,13 +4,10 @@ Maps all three schema layers: raw, staging, marts.
 """
 
 import uuid
-from datetime import datetime, date
-from decimal import Decimal
-from typing import Optional
 
 from sqlalchemy import (
     BigInteger, Boolean, Column, Date, DateTime, ForeignKey,
-    Integer, Numeric, String, Text, UniqueConstraint, func, text
+    Integer, Numeric, String, Text, UniqueConstraint, func
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
