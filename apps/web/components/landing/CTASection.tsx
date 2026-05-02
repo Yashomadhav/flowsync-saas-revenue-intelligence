@@ -139,7 +139,7 @@ export function CTASection() {
                 </Button>
               </Link>
               <a
-                href="https://github.com/flowsync/saas-revenue-intelligence"
+                href="https://github.com/Yashomadhav/flowsync-saas-revenue-intelligence"
                 target="_blank"
                 rel="noopener noreferrer"
               >
