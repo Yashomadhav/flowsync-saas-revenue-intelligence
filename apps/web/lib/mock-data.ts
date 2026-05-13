@@ -1,5 +1,4 @@
 // @ts-nocheck
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Mock data for development and demo mode fallback
 // Used when API is unavailable or NEXT_PUBLIC_USE_MOCK_DATA=true
 
