@@ -61,10 +61,10 @@ export default function CustomerHealthPage() {
         setSupport(s);
         setStats(st);
       } catch {
-        setDistribution(MOCK_HEALTH_DISTRIBUTION);
-        setQuadrant(MOCK_RISK_QUADRANT);
-        setSupport(MOCK_SUPPORT_BURDEN);
-        setStats(MOCK_HEALTH_STATS);
+        setDistribution(MOCK_HEALTH_DISTRIBUTION as any);
+        setQuadrant(MOCK_RISK_QUADRANT as any);
+        setSupport(MOCK_SUPPORT_BURDEN as any);
+        setStats(MOCK_HEALTH_STATS as any);
       } finally {
         setLoading(false);
       }

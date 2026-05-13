@@ -75,11 +75,11 @@ export default function RevenueMovementsPage() {
         setByChannel(c);
         setPaymentTrends(p);
       } catch {
-        setBridge(MOCK_MRR_BRIDGE);
-        setMovements(MOCK_ACCOUNT_MOVEMENTS);
-        setWaterfall(MOCK_WATERFALL);
-        setByChannel(MOCK_NEW_MRR_BY_CHANNEL);
-        setPaymentTrends(MOCK_PAYMENT_TRENDS);
+        setBridge(MOCK_MRR_BRIDGE as any);
+        setMovements(MOCK_ACCOUNT_MOVEMENTS as any);
+        setWaterfall(MOCK_WATERFALL as any);
+        setByChannel(MOCK_NEW_MRR_BY_CHANNEL as any);
+        setPaymentTrends(MOCK_PAYMENT_TRENDS as any);
       } finally {
         setLoading(false);
       }

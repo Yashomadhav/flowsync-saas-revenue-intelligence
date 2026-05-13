@@ -44,11 +44,11 @@ export default function CohortRetentionPage() {
         setRetByPlan(rp);
         setRetBySize(rs);
       } catch {
-        setCustomerCohorts(MOCK_COHORT_RETENTION);
-        setRevenueCohorts(MOCK_COHORT_REVENUE);
-        setChurnTrend(MOCK_LOGO_CHURN_TREND);
-        setRetByPlan(MOCK_RETENTION_BY_PLAN);
-        setRetBySize(MOCK_RETENTION_BY_SIZE);
+        setCustomerCohorts(MOCK_COHORT_RETENTION as any);
+        setRevenueCohorts(MOCK_COHORT_REVENUE as any);
+        setChurnTrend(MOCK_LOGO_CHURN_TREND as any);
+        setRetByPlan(MOCK_RETENTION_BY_PLAN as any);
+        setRetBySize(MOCK_RETENTION_BY_SIZE as any);
       } finally {
         setLoading(false);
       }

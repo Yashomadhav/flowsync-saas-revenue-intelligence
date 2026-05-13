@@ -39,10 +39,10 @@ export default function FunnelGrowthPage() {
         setSalesCycle(s);
         setExpansion(e);
       } catch {
-        setFunnel(MOCK_FUNNEL);
-        setByChannel(MOCK_CONVERSION_BY_CHANNEL);
-        setSalesCycle(MOCK_SALES_CYCLE);
-        setExpansion(MOCK_EXPANSION_BY_SEGMENT);
+        setFunnel(MOCK_FUNNEL as any);
+        setByChannel(MOCK_CONVERSION_BY_CHANNEL as any);
+        setSalesCycle(MOCK_SALES_CYCLE as any);
+        setExpansion(MOCK_EXPANSION_BY_SEGMENT as any);
       } finally {
         setLoading(false);
       }

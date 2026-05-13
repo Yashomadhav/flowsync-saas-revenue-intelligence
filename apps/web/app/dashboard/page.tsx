@@ -59,13 +59,13 @@ export default function ExecutiveOverviewPage() {
         setTopExpanding(e);
         setTopRisk(rk);
       } catch {
-        setSummary(MOCK_EXECUTIVE_SUMMARY);
-        setTrend(MOCK_MRR_TREND);
-        setWaterfall(MOCK_WATERFALL);
-        setByPlan(MOCK_REVENUE_BY_PLAN);
-        setByRegion(MOCK_REVENUE_BY_REGION);
-        setTopExpanding(MOCK_TOP_EXPANDING);
-        setTopRisk(MOCK_TOP_CHURN_RISK);
+        setSummary(MOCK_EXECUTIVE_SUMMARY as any);
+        setTrend(MOCK_MRR_TREND as any);
+        setWaterfall(MOCK_WATERFALL as any);
+        setByPlan(MOCK_REVENUE_BY_PLAN as any);
+        setByRegion(MOCK_REVENUE_BY_REGION as any);
+        setTopExpanding(MOCK_TOP_EXPANDING as any);
+        setTopRisk(MOCK_TOP_CHURN_RISK as any);
       } finally {
         setLoading(false);
       }
