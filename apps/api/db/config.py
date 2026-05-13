@@ -22,7 +22,7 @@ class DatabaseConfig(BaseSettings):
 
     # Core connection
     database_url: str = Field(
-        default="postgresql://flowsync:flowsync_secret_change_me@localhost:5432/flowsync_bi",
+        default="postgresql://flowsync:changeme@localhost:5432/flowsync_bi",
         env="DATABASE_URL",
     )
 
@@ -32,14 +32,14 @@ class DatabaseConfig(BaseSettings):
     postgres_db: str = Field(default="flowsync_bi", env="POSTGRES_DB")
     postgres_user: str = Field(default="flowsync", env="POSTGRES_USER")
     postgres_password: str = Field(
-        default="flowsync_secret_change_me", env="POSTGRES_PASSWORD"
+        default="changeme", env="POSTGRES_PASSWORD"
     )
 
-    # Connection pool settings
-    pool_size: int = Field(default=10, env="DB_POOL_SIZE")
-    max_overflow: int = Field(default=20, env="DB_MAX_OVERFLOW")
+    # Connection pool settings (tuned for analytics workloads)
+    pool_size: int = Field(default=20, env="DB_POOL_SIZE")
+    max_overflow: int = Field(default=30, env="DB_MAX_OVERFLOW")
     pool_timeout: int = Field(default=30, env="DB_POOL_TIMEOUT")
-    pool_recycle: int = Field(default=1800, env="DB_POOL_RECYCLE")
+    pool_recycle: int = Field(default=900, env="DB_POOL_RECYCLE")
     pool_pre_ping: bool = Field(default=True, env="DB_POOL_PRE_PING")
 
     # Retry logic
@@ -56,7 +56,7 @@ class DatabaseConfig(BaseSettings):
 
     # Schema search path
     db_schema_search_path: str = Field(
-        default="marts,staging,raw,public",
+        default="marts,staging,raw,auth,public",
         env="DB_SCHEMA_SEARCH_PATH",
     )
 

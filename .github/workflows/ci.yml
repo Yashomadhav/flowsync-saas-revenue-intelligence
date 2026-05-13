@@ -96,15 +96,13 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Ruff linter
-        run: pip install ruff && ruff check .
+        run: ruff check .
 
       - name: Run type check (mypy)
-        run: pip install mypy && mypy . --ignore-missing-imports || true
+        run: mypy . --ignore-missing-imports
 
       - name: Run tests
-        run: |
-          pip install pytest pytest-asyncio httpx
-          pytest tests/ -v --tb=short || true
+        run: pytest tests/ -v --tb=short --cov=. --cov-report=term-missing --cov-fail-under=60
         env:
           DATABASE_URL: postgresql://flowsync:test_password@localhost:5432/flowsync_test
           API_ENV: test

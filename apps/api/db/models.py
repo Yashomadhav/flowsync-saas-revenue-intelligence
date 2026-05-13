@@ -76,6 +76,7 @@ class RawAccount(Base):
     __table_args__ = {"schema": "raw"}
 
     _row_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(UUID, index=True)
     account_id = Column(Text)
     company_name = Column(Text)
     industry = Column(Text)
@@ -97,6 +98,7 @@ class RawSubscription(Base):
     __table_args__ = {"schema": "raw"}
 
     _row_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(UUID, index=True)
     subscription_id = Column(Text)
     account_id = Column(Text)
     plan_id = Column(Text)
@@ -121,6 +123,7 @@ class RawInvoice(Base):
     __table_args__ = {"schema": "raw"}
 
     _row_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(UUID, index=True)
     invoice_id = Column(Text)
     account_id = Column(Text)
     subscription_id = Column(Text)
@@ -142,6 +145,7 @@ class RawUsageEvent(Base):
     __table_args__ = {"schema": "raw"}
 
     _row_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(UUID, index=True)
     event_id = Column(Text)
     account_id = Column(Text)
     user_id = Column(Text)
@@ -159,6 +163,7 @@ class RawTicket(Base):
     __table_args__ = {"schema": "raw"}
 
     _row_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(UUID, index=True)
     ticket_id = Column(Text)
     account_id = Column(Text)
     subject = Column(Text)
@@ -178,6 +183,7 @@ class RawLead(Base):
     __table_args__ = {"schema": "raw"}
 
     _row_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(UUID, index=True)
     lead_id = Column(Text)
     company_name = Column(Text)
     industry = Column(Text)

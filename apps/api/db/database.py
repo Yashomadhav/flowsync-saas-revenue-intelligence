@@ -223,7 +223,7 @@ def check_db_health() -> dict:
 
 def init_schemas(engine=None):
     """
-    Creates the raw, staging, and marts schemas if they don't exist.
+    Creates the raw, staging, marts, and auth schemas if they don't exist.
     Safe to call multiple times (idempotent).
     """
     if engine is None:
@@ -232,7 +232,8 @@ def init_schemas(engine=None):
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS raw"))
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS staging"))
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS marts"))
-    logger.info("Schemas raw/staging/marts ensured.")
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS auth"))
+    logger.info("Schemas raw/staging/marts/auth ensured.")
 
 
 def create_all_tables(engine=None):
