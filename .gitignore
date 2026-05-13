@@ -35,6 +35,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!apps/web/lib/
 lib64/
 parts/
 sdist/
@@ -112,3 +113,4 @@ data/seeds/*.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+.vercel
