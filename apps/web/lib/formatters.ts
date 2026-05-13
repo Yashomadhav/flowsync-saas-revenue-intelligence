@@ -61,13 +61,14 @@ export const CHART_PALETTE = [
   "#06b6d4", "#3b82f6",
 ];
 
-export const MOVEMENT_COLORS = {
+export const MOVEMENT_COLORS: Record<string, string> = {
   new: "#22c55e",
   expansion: "#3b82f6",
   contraction: "#f97316",
   churn: "#ef4444",
   reactivation: "#8b5cf6",
   retained: "#6b7280",
+  existing: "#64748b",
 };
 
 export const PLAN_COLORS: Record<string, string> = {
